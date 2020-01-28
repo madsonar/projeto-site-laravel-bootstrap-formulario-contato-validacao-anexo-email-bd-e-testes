@@ -48,16 +48,23 @@
 
 * Configurar banco SQLite no arquivo .env:
 
-    Comentar linhas:
-    
-    DB_CONNECTION=mysql
-    DB_HOST=127.0.0.1
-    DB_PORT=3306
-    DB_DATABASE=laravel
-    DB_USERNAME=root
-    DB_PASSWORD=
+    Comentar linhas:  
 
-    Inserir linha:
+    DB_CONNECTION=mysql  
+
+    DB_HOST=127.0.0.1  
+
+    DB_PORT=3306  
+
+    DB_DATABASE=laravel  
+
+    DB_USERNAME=root  
+
+    DB_PASSWORD=  
+
+
+    Inserir linha:  
+
     DB_CONNECTION=sqlite
 
     Obs: Deve ser habilitado o SQlite no PHP.ini
@@ -68,17 +75,19 @@
 
 * Configurar envio de e-mail para usar Drive Gmail da Google
 
-    Obs: No arquivo .env substituir comentar linhas:
-    MAIL_DRIVER=smtp
-    MAIL_HOST=smtp.mailtrap.io
-    MAIL_PORT=2525
-    MAIL_USERNAME=null
-    MAIL_PASSWORD=null
-    MAIL_ENCRYPTION=null
-    MAIL_FROM_ADDRESS=null
-    MAIL_FROM_NAME="${APP_NAME}"
+    Obs: No arquivo .env substituir comentar linhas:  
 
-    Inserir linhas abaixo informando seu e-mail e senha do Gmail.
+    MAIL_DRIVER=smtp  
+    MAIL_HOST=smtp.mailtrap.io  
+    MAIL_PORT=2525  
+    MAIL_USERNAME=null  
+    MAIL_PASSWORD=null  
+    MAIL_ENCRYPTION=null  
+    MAIL_FROM_ADDRESS=null  
+    MAIL_FROM_NAME="${APP_NAME}"  
+
+    Inserir linhas abaixo informando seu e-mail e senha do Gmail.  
+    
     MAIL_DRIVER=smtp
     MAIL_HOST=smtp.gmail.com
     MAIL_PORT=587
