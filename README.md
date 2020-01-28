@@ -51,15 +51,10 @@
     Comentar linhas:  
 
     DB_CONNECTION=mysql  
-
     DB_HOST=127.0.0.1  
-
     DB_PORT=3306  
-
     DB_DATABASE=laravel  
-
     DB_USERNAME=root  
-
     DB_PASSWORD=  
 
 
@@ -87,13 +82,13 @@
     MAIL_FROM_NAME="${APP_NAME}"  
 
     Inserir linhas abaixo informando seu e-mail e senha do Gmail.  
-    
-    MAIL_DRIVER=smtp
-    MAIL_HOST=smtp.gmail.com
-    MAIL_PORT=587
-    MAIL_USERNAME=
-    MAIL_PASSWORD=
-    MAIL_ENCRYPTION=tls
+
+    MAIL_DRIVER=smtp  
+    MAIL_HOST=smtp.gmail.com  
+    MAIL_PORT=587  
+    MAIL_USERNAME=  
+    MAIL_PASSWORD=  
+    MAIL_ENCRYPTION=tls  
 
     Obs: No Gmail deve ser ativado a configuração 'Acesso a app menos seguro'
 
