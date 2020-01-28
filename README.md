@@ -18,12 +18,34 @@
 #### Passos para rodar o projeto:
 
 * Realizar git clone do projeto:
+
     $ git clone git@github.com:madsonar/projeto-site-laravel-bootstrap-formulario-contato-validacao-anexo-email-bd-e-testes.git
 
+* Entrar no diretório do projeto:
+    $ cd web-app/
+
 * Instalar dependencias do composer
+
     $ composer install
 
 * Instalar dependencias JS/Node com npm e compilar com empacotador Webpack
+
     $ npm install && npm run dev
 
-* 
+* Criar o arquivo de configuração .env de variáveis de ambiente .env copiando o arquivo .env.example:
+
+    $ cp .env.example .env
+
+* Gerar chave de segurança da aplicação:
+
+    $ php artisan key:generate
+
+* Criar arquivo banco SQLite:
+
+    $ touch database/database.sqlite
+
+* Configurar banco SQLite no arquivo .env:
+
+    Comentar linhas:
+    
+
