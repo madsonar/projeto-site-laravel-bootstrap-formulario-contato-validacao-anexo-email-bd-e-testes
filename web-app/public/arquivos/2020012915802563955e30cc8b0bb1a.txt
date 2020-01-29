@@ -1,0 +1,1416 @@
+const { sql, pool, conexao } = require('../../banco/dbConexao');
+var RespostaClass = require('../../model/RespostaClass');
+const async = require('async');
+
+module.exports = class ProjetadoXrealizadoModel {
+
+
+    static getIndicadoresProjetoRealRedimentoProjetos(req, resp) {
+
+        conexao.then(conexao => {
+            let resposta = new RespostaClass();
+            conexao.request()
+                .query(`
+                SELECT i.seq, i.id_indicador, i.nome
+                    FROM indicadores AS i
+                        WHERE i.ativo = 'SIM' ORDER BY i.seq ASC
+               `)
+                .then(result => {
+                    resposta.dados = result.recordset;
+                    return resp.json(resposta)
+                })
+                .catch(err => {
+                    resposta.erro = true;
+                    resposta.msg = "Ocorreu ao recuperar indicadores.";
+                    console.log('erro:', err);
+                    return resp.json(resposta)
+                });
+        });
+    }
+
+
+    static getProjetadoXrealizadoPromise(parametros) {
+
+
+        return new Promise((resolve, reject) => {
+
+            let resposta = new RespostaClass();
+            resposta.erro = false;
+            resposta.msg = null;
+            resposta.dados = null;
+
+            let {
+                data_inicio = null,
+                data_fim = null,
+                id_projeto = null,
+                id_projeto_pai = null,
+                id_projeto_matriz = null,
+                projeto_matriz = null,
+                projeto_pai = null,
+            } = parametros;
+
+            //console.log('parametros: ', parametros)
+
+            data_inicio = data_inicio + " 00:00:00"
+            data_fim = data_fim + " 23:59:59"
+
+            if (!!data_inicio != true || !!data_fim != true || !!id_projeto != true) {
+                resposta.erro = true;
+                resposta.msg = `Deve ser enviado todos os dados: data início, data final, projeto, ano e mês`;
+                console.log('erro:', resposta.msg);
+                return resolve(resposta)
+            }
+
+            //recuperar mês e ano data
+            let data_quebra = data_inicio.split('-');
+            let mes = parseInt(data_quebra[1]);
+            let ano = parseInt(data_quebra[0]);
+
+            //verificar o tipo de pŕojeto
+            if (projeto_matriz == 'SIM') {
+                id_projeto_matriz = id_projeto;
+                id_projeto = null;
+                id_projeto_pai = null;
+            } else if (projeto_pai == 'SIM') {
+                id_projeto_pai = id_projeto;
+                id_projeto = null;
+                id_projeto_matriz = null;
+            } else {
+                id_projeto = id_projeto;
+                id_projeto_matriz = null;
+                id_projeto_pai = null;
+            }
+
+            conexao.then(conexao => {
+
+                let query = `BEGIN
+            SET DATEFORMAT ymd;
+            
+            --parametros
+            DECLARE @id_projeto INTEGER = ${id_projeto}
+            DECLARE @id_projeto_pai INTEGER = ${id_projeto_pai}
+            DECLARE @id_projeto_matriz INTEGER = ${id_projeto_matriz}
+            
+            --DECLARE @data_inicio VARCHAR = NULL
+            --DECLARE @data_fim VARCHAR = NULL
+            DECLARE @data_inicio DATETIME = '${data_inicio}'
+            DECLARE @data_fim DATETIME = '${data_fim}'
+            DECLARE @mes INTEGER = ${mes}
+            DECLARE @ano INTEGER = ${ano}
+            
+            --Para não ser NULL e fazer o filtro OR errado
+            IF @id_projeto IS NULL SET @id_projeto = 0;
+            IF @id_projeto_pai IS NULL SET @id_projeto_pai = 0;
+            IF @id_projeto_matriz IS NULL SET @id_projeto_matriz = 0;
+            IF @mes IS NULL SET @mes = 0;
+            IF @ano IS NULL SET @ano = 0;
+            
+            --Indicadores meta
+            DECLARE @faturamento_bruto_meta DECIMAL(18,2) = 0.0;
+			DECLARE @lucro_bruto_meta DECIMAL(18,2) = 0.0;
+			DECLARE @custos_de_vendas_meta DECIMAL(18,2) = 0.0;
+			DECLARE @margem_contribuicao_meta DECIMAL(18,2) = 0.0;
+			DECLARE @despesas_adm_meta DECIMAL(18,2) = 0.0;
+			DECLARE @resultado_operacional_meta DECIMAL(18,2) = 0.0;
+			DECLARE @investimentos_meta DECIMAL(18,2) = 0.0;
+			DECLARE @resultado_liquido_meta DECIMAL(18,2) = 0.0;
+			DECLARE @extravio_meta DECIMAL(18,2) = 0.0;            
+            DECLARE @premiacoes_meta DECIMAL(18,2) = 0.0;
+            DECLARE @comissão_cambistas_meta DECIMAL(18,2) = 0.0;
+            DECLARE @comissao_gerentes_meta DECIMAL(18,2) = 0.0;                                                                                    
+
+			SELECT @faturamento_bruto_meta = CONVERT(DECIMAL(18, 2), SUM(m.valor_qtde))
+                FROM metas AS m
+                LEFT JOIN projetos AS p ON p.id_projeto = m.id_projeto
+                LEFT JOIN anos AS a ON a.id_ano = m.id_ano
+                LEFT JOIN meses AS me ON me.id_mes = m.id_mes
+                WHERE me.mes_numero = @mes AND a.ano_numero = @ano AND m.id_indicador = 1
+                AND (m.id_projeto = @id_projeto OR p.id_projeto_pai = @id_projeto_pai OR p.id_projeto_matriz = @id_projeto_matriz)
+			
+			SELECT @lucro_bruto_meta = CONVERT(DECIMAL(18, 2), SUM(m.valor_qtde))
+                FROM metas AS m
+                LEFT JOIN projetos AS p ON p.id_projeto = m.id_projeto
+                LEFT JOIN anos AS a ON a.id_ano = m.id_ano
+                LEFT JOIN meses AS me ON me.id_mes = m.id_mes
+                WHERE me.mes_numero = @mes AND a.ano_numero = @ano AND m.id_indicador = 2
+                AND (m.id_projeto = @id_projeto OR p.id_projeto_pai = @id_projeto_pai OR p.id_projeto_matriz = @id_projeto_matriz)
+
+			SELECT @custos_de_vendas_meta = CONVERT(DECIMAL(18, 2), SUM(m.valor_qtde))
+                FROM metas AS m
+                LEFT JOIN projetos AS p ON p.id_projeto = m.id_projeto
+                LEFT JOIN anos AS a ON a.id_ano = m.id_ano
+                LEFT JOIN meses AS me ON me.id_mes = m.id_mes
+                WHERE me.mes_numero = @mes AND a.ano_numero = @ano AND m.id_indicador = 3
+                AND (m.id_projeto = @id_projeto OR p.id_projeto_pai = @id_projeto_pai OR p.id_projeto_matriz = @id_projeto_matriz)
+
+			SELECT @margem_contribuicao_meta = CONVERT(DECIMAL(18, 2), SUM(m.valor_qtde))
+                FROM metas AS m
+                LEFT JOIN projetos AS p ON p.id_projeto = m.id_projeto
+                LEFT JOIN anos AS a ON a.id_ano = m.id_ano
+                LEFT JOIN meses AS me ON me.id_mes = m.id_mes
+                WHERE me.mes_numero = @mes AND a.ano_numero = @ano AND m.id_indicador = 4
+                AND (m.id_projeto = @id_projeto OR p.id_projeto_pai = @id_projeto_pai OR p.id_projeto_matriz = @id_projeto_matriz)
+
+			SELECT @despesas_adm_meta = CONVERT(DECIMAL(18, 2), SUM(m.valor_qtde))
+                FROM metas AS m
+                LEFT JOIN projetos AS p ON p.id_projeto = m.id_projeto
+                LEFT JOIN anos AS a ON a.id_ano = m.id_ano
+                LEFT JOIN meses AS me ON me.id_mes = m.id_mes
+                WHERE me.mes_numero = @mes AND a.ano_numero = @ano AND m.id_indicador = 5
+                AND (m.id_projeto = @id_projeto OR p.id_projeto_pai = @id_projeto_pai OR p.id_projeto_matriz = @id_projeto_matriz)
+
+			SELECT @resultado_operacional_meta = CONVERT(DECIMAL(18, 2), SUM(m.valor_qtde))
+                FROM metas AS m
+                LEFT JOIN projetos AS p ON p.id_projeto = m.id_projeto
+                LEFT JOIN anos AS a ON a.id_ano = m.id_ano
+                LEFT JOIN meses AS me ON me.id_mes = m.id_mes
+                WHERE me.mes_numero = @mes AND a.ano_numero = @ano AND m.id_indicador = 6
+                AND (m.id_projeto = @id_projeto OR p.id_projeto_pai = @id_projeto_pai OR p.id_projeto_matriz = @id_projeto_matriz)
+
+			SELECT @investimentos_meta = CONVERT(DECIMAL(18, 2), SUM(m.valor_qtde))
+                FROM metas AS m
+                LEFT JOIN projetos AS p ON p.id_projeto = m.id_projeto
+                LEFT JOIN anos AS a ON a.id_ano = m.id_ano
+                LEFT JOIN meses AS me ON me.id_mes = m.id_mes
+                WHERE me.mes_numero = @mes AND a.ano_numero = @ano AND m.id_indicador = 7
+                AND (m.id_projeto = @id_projeto OR p.id_projeto_pai = @id_projeto_pai OR p.id_projeto_matriz = @id_projeto_matriz)
+
+			SELECT @resultado_liquido_meta = CONVERT(DECIMAL(18, 2), SUM(m.valor_qtde))
+                FROM metas AS m
+                LEFT JOIN projetos AS p ON p.id_projeto = m.id_projeto
+                LEFT JOIN anos AS a ON a.id_ano = m.id_ano
+                LEFT JOIN meses AS me ON me.id_mes = m.id_mes
+                WHERE me.mes_numero = @mes AND a.ano_numero = @ano AND m.id_indicador = 8
+                AND (m.id_projeto = @id_projeto OR p.id_projeto_pai = @id_projeto_pai OR p.id_projeto_matriz = @id_projeto_matriz)
+
+			SELECT @extravio_meta = CONVERT(DECIMAL(18, 2), SUM(m.valor_qtde))
+                FROM metas AS m
+                LEFT JOIN projetos AS p ON p.id_projeto = m.id_projeto
+                LEFT JOIN anos AS a ON a.id_ano = m.id_ano
+                LEFT JOIN meses AS me ON me.id_mes = m.id_mes
+                WHERE me.mes_numero = @mes AND a.ano_numero = @ano AND m.id_indicador = 9
+                AND (m.id_projeto = @id_projeto OR p.id_projeto_pai = @id_projeto_pai OR p.id_projeto_matriz = @id_projeto_matriz)
+
+			SELECT @premiacoes_meta = CONVERT(DECIMAL(18, 2), SUM(m.valor_qtde))
+                FROM metas AS m
+                LEFT JOIN projetos AS p ON p.id_projeto = m.id_projeto
+                LEFT JOIN anos AS a ON a.id_ano = m.id_ano
+                LEFT JOIN meses AS me ON me.id_mes = m.id_mes
+                WHERE me.mes_numero = @mes AND a.ano_numero = @ano AND m.id_indicador = 11
+                AND (m.id_projeto = @id_projeto OR p.id_projeto_pai = @id_projeto_pai OR p.id_projeto_matriz = @id_projeto_matriz)
+
+			SELECT @comissão_cambistas_meta  = CONVERT(DECIMAL(18, 2), SUM(m.valor_qtde))
+                FROM metas AS m
+                LEFT JOIN projetos AS p ON p.id_projeto = m.id_projeto
+                LEFT JOIN anos AS a ON a.id_ano = m.id_ano
+                LEFT JOIN meses AS me ON me.id_mes = m.id_mes
+                WHERE me.mes_numero = @mes AND a.ano_numero = @ano AND m.id_indicador = 12
+                AND (m.id_projeto = @id_projeto OR p.id_projeto_pai = @id_projeto_pai OR p.id_projeto_matriz = @id_projeto_matriz)
+
+			SELECT @comissao_gerentes_meta  = CONVERT(DECIMAL(18, 2), SUM(m.valor_qtde))
+                FROM metas AS m
+                LEFT JOIN projetos AS p ON p.id_projeto = m.id_projeto
+                LEFT JOIN anos AS a ON a.id_ano = m.id_ano
+                LEFT JOIN meses AS me ON me.id_mes = m.id_mes
+                WHERE me.mes_numero = @mes AND a.ano_numero = @ano AND m.id_indicador = 13
+                AND (m.id_projeto = @id_projeto OR p.id_projeto_pai = @id_projeto_pai OR p.id_projeto_matriz = @id_projeto_matriz)
+
+			
+			--Indicadores realizado-----------------
+            DECLARE @faturamento_bruto DECIMAL(18,2) = 0.0;
+            DECLARE @premiacoes DECIMAL(18,2) = 0.0;
+            DECLARE @comissão_cambistas DECIMAL(18,2) = 0.0;
+            DECLARE @comissao_gerentes DECIMAL(18,2) = 0.0;
+            DECLARE @custos_de_vendas DECIMAL(18,2) = 0.0;
+            DECLARE @lucro_bruto DECIMAL(18,2) = 0.0;
+            DECLARE @margem_contribuicao DECIMAL(18,2) = 0.0;
+            DECLARE @despesas_adm DECIMAL(18,2) = 0.0;
+            DECLARE @resultado_operacional DECIMAL(18,2) = 0.0;
+            DECLARE @investimentos DECIMAL(18,2) = 0.0;
+            DECLARE @extravio DECIMAL(18,2) = 0.0;
+            DECLARE @resultado_liquido DECIMAL(18,2) = 0.0;
+            DECLARE @lucro_percentual DECIMAL(18,2) = 0.0;
+
+            SELECT @custos_de_vendas = CONVERT(DECIMAL(18, 2), SUM(fc.valor_mov))
+                FROM fluxo_caixa AS fc
+                LEFT JOIN projetos AS p ON p.id_projeto = fc.id_projeto
+                WHERE fc.id_grupo_financeiro = 3 AND fc.data_mov_completo BETWEEN @data_inicio AND @data_fim
+                AND (fc.id_projeto = @id_projeto OR p.id_projeto_pai = @id_projeto_pai OR p.id_projeto_matriz = @id_projeto_matriz)
+
+            SELECT @faturamento_bruto = CONVERT(DECIMAL(18, 2), SUM(fc.valor_mov))
+                FROM fluxo_caixa AS fc
+                LEFT JOIN projetos AS p ON p.id_projeto = fc.id_projeto
+                WHERE fc.id_grupo_financeiro = 1 AND fc.data_mov_completo BETWEEN @data_inicio AND @data_fim
+                AND (fc.id_projeto = @id_projeto OR p.id_projeto_pai = @id_projeto_pai OR p.id_projeto_matriz = @id_projeto_matriz)
+
+            SELECT @premiacoes = CONVERT(DECIMAL(18, 2), SUM(fc.valor_mov))
+                FROM fluxo_caixa AS fc
+                LEFT JOIN projetos AS p ON p.id_projeto = fc.id_projeto
+                WHERE fc.id_grupo_financeiro = 4 AND fc.data_mov_completo BETWEEN @data_inicio AND @data_fim
+                AND (fc.id_projeto = @id_projeto OR p.id_projeto_pai = @id_projeto_pai OR p.id_projeto_matriz = @id_projeto_matriz)
+
+            SELECT @comissão_cambistas = CONVERT(DECIMAL(18, 2), SUM(fc.valor_mov))
+                FROM fluxo_caixa AS fc
+                LEFT JOIN projetos AS p ON p.id_projeto = fc.id_projeto
+                WHERE fc.id_grupo_financeiro = 5 AND fc.data_mov_completo BETWEEN @data_inicio AND @data_fim
+                AND (fc.id_projeto = @id_projeto OR p.id_projeto_pai = @id_projeto_pai OR p.id_projeto_matriz = @id_projeto_matriz)
+
+            SELECT @comissao_gerentes = CONVERT(DECIMAL(18, 2), SUM(fc.valor_mov))
+                FROM fluxo_caixa AS fc
+                LEFT JOIN projetos AS p ON p.id_projeto = fc.id_projeto
+                WHERE fc.id_grupo_financeiro = 6 AND fc.data_mov_completo BETWEEN @data_inicio AND @data_fim
+                AND (fc.id_projeto = @id_projeto OR p.id_projeto_pai = @id_projeto_pai OR p.id_projeto_matriz = @id_projeto_matriz)
+
+            SELECT @despesas_adm = CONVERT(DECIMAL(18, 2), SUM(fc.valor_mov))
+                FROM fluxo_caixa AS fc
+                LEFT JOIN projetos AS p ON p.id_projeto = fc.id_projeto
+                LEFT JOIN grupos_financeiro AS gf ON gf.id_grupo_financeiro = fc.id_grupo_financeiro
+                WHERE (fc.id_grupo_financeiro = 7 OR gf.id_grupo_financeiro_pai = 7) AND
+                fc.data_mov_completo BETWEEN @data_inicio AND @data_fim
+                AND (fc.id_projeto = @id_projeto OR p.id_projeto_pai = @id_projeto_pai OR p.id_projeto_matriz = @id_projeto_matriz)
+
+            SELECT @investimentos = CONVERT(DECIMAL(18, 2), SUM(fc.valor_mov))
+                FROM fluxo_caixa AS fc
+                LEFT JOIN projetos AS p ON p.id_projeto = fc.id_projeto
+                LEFT JOIN grupos_financeiro AS gf ON gf.id_grupo_financeiro = fc.id_grupo_financeiro
+                WHERE (fc.id_grupo_financeiro = 8 OR gf.id_grupo_financeiro_pai = 8) AND
+                fc.data_mov_completo BETWEEN @data_inicio AND @data_fim
+                AND (fc.id_projeto = @id_projeto OR p.id_projeto_pai = @id_projeto_pai OR p.id_projeto_matriz = @id_projeto_matriz)
+
+            SELECT @extravio = CONVERT(DECIMAL(18, 2), SUM(fc.valor_mov))
+                FROM fluxo_caixa AS fc
+                LEFT JOIN projetos AS p ON p.id_projeto = fc.id_projeto
+                LEFT JOIN grupos_financeiro AS gf ON gf.id_grupo_financeiro = fc.id_grupo_financeiro
+                WHERE (fc.id_grupo_financeiro = 9 OR gf.id_grupo_financeiro_pai = 9) AND
+                fc.data_mov_completo BETWEEN @data_inicio AND @data_fim
+                AND (fc.id_projeto = @id_projeto OR p.id_projeto_pai = @id_projeto_pai OR p.id_projeto_matriz = @id_projeto_matriz)
+
+
+            IF @faturamento_bruto IS NULL SET @faturamento_bruto = 0;
+            IF @premiacoes IS NULL SET @premiacoes = 0;
+            IF @comissão_cambistas IS NULL SET @comissão_cambistas = 0;
+            IF @comissao_gerentes IS NULL SET @comissao_gerentes = 0;
+            IF @custos_de_vendas IS NULL SET @custos_de_vendas = 0;
+            IF @despesas_adm IS NULL SET @despesas_adm = 0;
+            IF @investimentos IS NULL SET @investimentos = 0;
+            IF @extravio IS NULL SET @extravio = 0;
+            IF @resultado_operacional IS NULL SET @resultado_operacional = 0;
+            IF @resultado_liquido IS NULL SET @resultado_liquido = 0;
+            IF @lucro_percentual IS NULL SET @lucro_percentual = 0;			
+
+            SET @lucro_bruto = (@faturamento_bruto - (@premiacoes + @comissão_cambistas));
+
+            SET @margem_contribuicao = (@lucro_bruto  - (@custos_de_vendas + @comissao_gerentes));
+
+            SET @resultado_operacional = (@margem_contribuicao  - @despesas_adm);
+
+            SET @resultado_liquido = @resultado_operacional - (@investimentos + @extravio);
+
+			--percentual em cima do faturamento bruto
+			DECLARE @faturamento_bruto_percent_fat DECIMAL(18,2) = 0.0;
+            DECLARE @premiacoes_percent_fat DECIMAL(18,2) = 0.0;
+            DECLARE @comissão_cambistas_percent_fat DECIMAL(18,2) = 0.0;
+            DECLARE @comissao_gerentes_percent_fat DECIMAL(18,2) = 0.0;
+            DECLARE @custos_de_vendas_percent_fat DECIMAL(18,2) = 0.0;
+            DECLARE @lucro_bruto_percent_fat DECIMAL(18,2) = 0.0;
+            DECLARE @margem_contribuicao_percent_fat DECIMAL(18,2) = 0.0;
+            DECLARE @despesas_adm_percent_fat DECIMAL(18,2) = 0.0;
+            DECLARE @resultado_operacional_percent_fat DECIMAL(18,2) = 0.0;
+            DECLARE @investimentos_percent_fat DECIMAL(18,2) = 0.0;
+            DECLARE @extravio_percent_fat DECIMAL(18,2) = 0.0;
+            DECLARE @resultado_liquido_percent_fat DECIMAL(18,2) = 0.0;
+
+			IF @faturamento_bruto != 0 
+                SET @faturamento_bruto_percent_fat = CAST(((@faturamento_bruto / @faturamento_bruto) * 100) AS DECIMAL(18, 2))
+
+            IF @premiacoes != 0 AND @faturamento_bruto != 0
+                SET @premiacoes_percent_fat = CAST(((@premiacoes / @faturamento_bruto) * 100) AS DECIMAL(18, 2))
+
+			IF @comissão_cambistas != 0 AND @faturamento_bruto != 0
+                SET @comissão_cambistas_percent_fat = CAST(((@comissão_cambistas / @faturamento_bruto) * 100) AS DECIMAL(18, 2))
+
+			IF @comissao_gerentes != 0 AND @faturamento_bruto != 0
+                SET @comissao_gerentes_percent_fat = CAST(((@comissao_gerentes / @faturamento_bruto) * 100) AS DECIMAL(18, 2))
+
+			IF @custos_de_vendas != 0 AND @faturamento_bruto != 0
+                SET @custos_de_vendas_percent_fat = CAST(((@custos_de_vendas / @faturamento_bruto) * 100) AS DECIMAL(18, 2))
+
+			IF @despesas_adm != 0 AND @faturamento_bruto != 0
+                SET @despesas_adm_percent_fat = CAST(((@despesas_adm / @faturamento_bruto) * 100) AS DECIMAL(18, 2))
+
+			IF @investimentos != 0 AND @faturamento_bruto != 0
+                SET @investimentos_percent_fat = CAST(((@investimentos / @faturamento_bruto) * 100) AS DECIMAL(18, 2))
+
+			IF @extravio != 0 AND @faturamento_bruto != 0
+                SET @extravio_percent_fat  = CAST(((@extravio / @faturamento_bruto) * 100) AS DECIMAL(18, 2))
+
+			IF @resultado_operacional != 0 AND @faturamento_bruto != 0
+                SET @resultado_operacional_percent_fat  = CAST(((@resultado_operacional / @faturamento_bruto) * 100) AS DECIMAL(18, 2))
+
+			IF @resultado_liquido != 0 AND @faturamento_bruto != 0
+                SET @resultado_liquido_percent_fat  = CAST(((@resultado_liquido / @faturamento_bruto) * 100) AS DECIMAL(18, 2))
+
+			IF @lucro_bruto != 0 AND @faturamento_bruto != 0
+                SET @lucro_bruto_percent_fat  = CAST(((@lucro_bruto / @faturamento_bruto) * 100) AS DECIMAL(18, 2))
+
+			IF @margem_contribuicao != 0 AND @faturamento_bruto != 0
+                SET @margem_contribuicao_percent_fat  = CAST(((@margem_contribuicao / @faturamento_bruto) * 100) AS DECIMAL(18, 2))
+			
+			IF @resultado_liquido != 0 AND @faturamento_bruto != 0
+                SET @lucro_percentual  = CAST(((@resultado_liquido / @faturamento_bruto) * 100) AS DECIMAL(18, 2))
+
+			-----------------------------
+            SELECT
+            i.seq, i.id_indicador, i.nome,
+				
+				 CASE i.id_indicador
+                WHEN 1 --faturamento bruno
+                 THEN @faturamento_bruto_meta
+
+                WHEN 11 --premiacoes
+                 THEN @premiacoes_meta
+
+                WHEN 12 --Comissões Cambistas
+                 THEN @comissão_cambistas_meta
+
+                WHEN 2 --lucro bruto
+                 THEN @lucro_bruto_meta
+
+                WHEN 13 --Comissões Gerentes
+                 THEN @comissao_gerentes_meta
+
+                WHEN 3 --custo de vendas
+                 THEN @custos_de_vendas_meta
+
+                WHEN 4 --margem de contribuição
+                 THEN @margem_contribuicao_meta
+
+                WHEN 5 --Despesas Adm
+                 THEN @despesas_adm_meta
+
+                WHEN 6 --Resultado Operacional
+                 THEN @resultado_operacional_meta
+
+                WHEN 7 --Investimentos
+                 THEN @investimentos_meta
+
+                WHEN 9 --Extravio
+                 THEN @extravio_meta
+
+                WHEN 8 -- Resultado Liquido
+                 THEN @resultado_liquido_meta
+
+                WHEN 10 -- Resultado Liquido
+                 THEN 0
+
+            END
+            AS meta,
+
+            CASE i.id_indicador
+                WHEN 1 --faturamento bruno
+                 THEN @faturamento_bruto
+
+                WHEN 11 --premiacoes
+                 THEN @premiacoes
+
+                WHEN 12 --Comissões Cambistas
+                 THEN @comissão_cambistas
+
+                WHEN 2 --lucro bruto
+                 THEN @lucro_bruto
+
+                WHEN 13 --Comissões Gerentes
+                 THEN @comissao_gerentes
+
+                WHEN 3 --custo de vendas
+                 THEN @custos_de_vendas
+
+                WHEN 4 --margem de contribuição
+                 THEN @margem_contribuicao
+
+                WHEN 5 --Despesas Adm
+                 THEN @despesas_adm
+
+                WHEN 6 --Resultado Operacional
+                 THEN @resultado_operacional
+
+                WHEN 7 --Investimentos
+                 THEN @investimentos
+
+                WHEN 9 --Extravio
+                 THEN @extravio
+
+                WHEN 8 -- Resultado Liquido
+                 THEN @resultado_liquido
+
+                WHEN 10 -- Resultado Liquido
+                 THEN 0
+
+            END
+            AS realizado,
+
+            CASE i.id_indicador
+                WHEN 1 --faturamento bruno
+                 THEN @faturamento_bruto_percent_fat
+
+                WHEN 11 --premiacoes
+                 THEN @premiacoes_percent_fat
+
+                WHEN 12 --Comissões Cambistas
+                 THEN @comissão_cambistas_percent_fat
+
+                WHEN 2 --lucro bruto
+                 THEN @lucro_bruto_percent_fat
+
+                WHEN 13 --Comissões Gerentes
+                 THEN @comissao_gerentes_percent_fat
+
+                WHEN 3 --custo de vendas
+                 THEN @custos_de_vendas_percent_fat
+
+                WHEN 4 --margem de contribuição
+                 THEN @margem_contribuicao_percent_fat
+
+                WHEN 5 --Despesas Adm
+                 THEN @despesas_adm_percent_fat
+
+                WHEN 6 --Resultado Operacional
+                 THEN @resultado_operacional_percent_fat
+
+                WHEN 7 --Investimentos
+                 THEN @investimentos_percent_fat
+
+                WHEN 9 --Extravio
+                 THEN @extravio_percent_fat
+
+                WHEN 8 -- Resultado Liquido
+                 THEN @resultado_liquido_percent_fat
+
+                WHEN 10 -- Resultado Liquido
+                 THEN @lucro_percentual
+
+            END
+            AS percent_fat
+            FROM indicadores AS i
+            WHERE i.ativo = 'SIM' ORDER BY i.seq ASC
+            END`;
+
+                //console.log('query: ', query)
+
+                conexao.request()
+                    .query(query)
+                    .then(result => {
+                        resposta.dados = result.recordset;
+                        return resolve(resposta)
+                    })
+                    .catch(err => {
+                        resposta.erro = true;
+                        resposta.msg = "Ocorreu um erro.";
+                        console.log('erro:', err);
+                        //return resposta
+                        throw new Error(resposta.msg);
+                    });
+            });
+
+        }).catch(err => {
+            resposta.erro = true;
+            //resposta.msg = MSG_ERRO;
+            //return resolve(resposta)
+            throw new Error(resposta.msg);
+        })
+
+    }
+
+    static getProjetadoXrealizado(req, resp) {
+
+        let resposta = new RespostaClass();
+        resposta.erro = false;
+        resposta.msg = null;
+        resposta.dados = null;
+
+        ProjetadoXrealizadoModel.getProjetadoXrealizadoPromise(req.query).then(result => {
+            return resp.json(result)
+        }).catch(err => {
+            resposta.erro = true;
+            resposta.msg = "Ocorreu um erro.";
+            console.log('erro2:', err);
+            return resp.json(resposta)
+        });
+
+    }
+
+    static getProjetadoXrealizadoProjetos(req, resp) {
+
+        let resposta = new RespostaClass();
+        resposta.erro = false;
+        resposta.msg = null;
+        resposta.dados = [];
+
+        ProjetadoXrealizadoModel.getProjetadoXrealizadoPromise(req.query).then(result => {
+            return resp.json(result)
+        }).catch(err => {
+            resposta.erro = true;
+            resposta.msg = "Ocorreu um erro.";
+            console.log('erro2:', err);
+            return resp.json(resposta)
+        });
+
+    }
+
+    static getProjetadoXrealizadoProjetosIndPercentFat(req, resp) {
+        let resposta = new RespostaClass();
+        resposta.erro = false;
+        resposta.msg = null;
+        resposta.dados = [];
+        let listaDeProjetos = [];
+
+        try {
+
+            let {
+                data_inicio = null,
+                data_fim = null,
+                id_projeto = null,
+                id_projeto_pai = null,
+                id_projeto_matriz = null,
+                projeto_matriz = null,
+                projeto_pai = null,
+            } = req.query;
+
+            //Recuperar lista de projetos
+            let queryProjetos = `SELECT * FROM projetos AS p `
+
+            //verificar o tipo de projeto
+            if (projeto_matriz == 'SIM' || projeto_pai == 'SIM') {
+                //queryProjetos += ` WHERE p.id_projeto_matriz = ${id_projeto};`
+                queryProjetos += ` WHERE p.id_projeto_pai = ${id_projeto};`
+            } /** else if (projeto_pai == 'SIM') {
+                queryProjetos += ` WHERE p.id_projeto_pai = ${id_projeto};`
+            } */else {
+                queryProjetos += ` WHERE p.id_projeto = ${id_projeto};`
+                /**resposta.erro = true;
+                resposta.msg = 'Deve ser informado um projeto tipo pai ou matriz.';
+                return resp.json(resposta) */
+            }
+
+            //console.log('queryProjetos: ', queryProjetos);
+
+            const transaction = new sql.Transaction(pool);
+            transaction.begin(err => {
+                if (err) {
+                    resposta.erro = true;
+                    resposta.msg = MSG_ERRO;
+                    return resp.json(resposta)
+                }
+
+                let request = new sql.Request(transaction)
+
+                request.query(queryProjetos, (err, result) => {
+                    if (err) {
+                        resposta.erro = true;
+                        resposta.msg = "Não foi possível recuperar lista de projetos.";
+                        return resp.json(resposta)
+                    }
+
+                    //console.log('list result: ', result)
+                    if (result.rowsAffected[0] > 0) {
+                        //recuperar id
+                        if (result.recordset != undefined) {
+                            listaDeProjetos = result.recordset;
+
+                            //console.log('listaDeProjetos: ', listaDeProjetos)
+
+                            new Promise((resolve, reject) => {
+
+                                async.eachSeries(listaDeProjetos, function iterator(projeto, next) {
+
+                                    //console.log('projeto item: ', projeto)
+
+
+                                    let parametros = {
+                                        id_projeto: projeto.id_projeto,
+                                        id_projeto_pai: projeto.id_projeto_pai,
+                                        id_projeto_matriz: projeto.id_projeto_matriz,
+                                        projeto_matriz: projeto.projeto_matriz,
+                                        projeto_pai: projeto.projeto_pai,
+                                        data_inicio: data_inicio,
+                                        data_fim: data_fim
+                                    };
+
+                                    ProjetadoXrealizadoModel.getProjetadoXrealizadoPromise(parametros)
+                                        .then(retorno => {
+
+                                            let projInd = { projeto: projeto, indicadores: retorno.dados }
+                                            resposta.dados.push(projInd);
+
+                                            next();
+                                        }).catch(err => {
+                                            resposta.erro = true;
+                                            resposta.msg = "Ocorreu um erro.";
+                                            console.log('erro:', err);
+
+                                            next(resposta.msg);
+                                        });
+
+
+                                }, (err) => {
+                                    //console.log('Chegou na call async.eachSeries')
+                                    if (err) {
+                                        resposta.erro = true;
+                                        resposta.msg = err;
+                                        resolve()
+                                    } else {
+                                        resolve()
+                                    }
+                                })//final async.eachSeries
+                                //console.log('final async.eachSeries')
+
+                            }).then(() => {
+
+                                if (resposta.erro === false) {
+                                    //console.log('transaction.commit');
+
+                                    transaction.commit(err => {
+                                        if (err) {
+                                            resposta.erro = true;
+                                        }
+
+                                        //console.log("committed sem erro.")
+                                        return resp.json(resposta)
+                                    })
+                                } else {
+                                    //console.log("rollback final")
+                                    transaction.rollback(err => {
+                                        if (err) {
+                                            resposta.erro = true;
+                                        }
+
+                                        //console.log("rollback sem erro.")
+                                        return resp.json(resposta)
+                                    })
+                                }
+
+                            }).catch(err => {
+                                //console.log("Erro bloc catch promise: ", err);
+                                resposta.erro = true;
+                                //resposta.msg = MSG_ERRO;
+                                return resp.json(resposta)
+                            })
+
+                        } else {
+                            resposta.erro = true;
+                            resposta.msg = "Não foi possível recuperar lista de projetos.";
+                            //return next(resposta.msg);
+                            return resp.json(resposta)
+                        }
+                    } else {
+                        resposta.erro = true;
+                        resposta.msg = "Não foi possível recuperar lista de projetos.";
+                        //return next(resposta.msg);
+                        return resp.json(resposta)
+                    }
+                })
+
+            })//final transaction.begin
+
+        } catch (error) {
+            //console.log("Erro bloc try catch: ", error);
+            resposta.erro = true;
+            //resposta.msg = MSG_ERRO;
+            return resp.json(resposta)
+        }
+        //console.log('TERMINO');
+    }
+
+
+
+    static getProjetadoXrealizadoV1(req, resp) {
+
+        //console.log('req')
+
+        let resposta = new RespostaClass();
+        resposta.erro = false;
+        resposta.msg = null;
+        resposta.dados = null;
+
+
+        //checar parametros      
+        let {
+            data_inicio = null,
+            data_fim = null,
+            id_projeto = null,
+            id_projeto_pai = null,
+            id_projeto_matriz = null,
+            projeto_matriz = null,
+            projeto_pai = null,
+        } = req.query;
+
+        /*Falta validar*/
+        //console.log('projeto: ', id_projeto)
+
+        data_inicio = data_inicio + " 00:00:00"
+        data_fim = data_fim + " 23:59:59"
+
+        //console.log('data_inicio: ', data_inicio)
+        //console.log('data_fim: ', data_fim)
+
+        if (!!data_inicio != true || !!data_fim != true || !!id_projeto != true) {
+            resposta.erro = true;
+            resposta.msg = `Deve ser enviado todos os dados: data início, data final, projeto, ano e mês`;
+            console.log('erro:', resposta.msg);
+            return resp.json(resposta)
+        }
+
+        //recuperar mês e ano data
+        let data_quebra = data_inicio.split('-');
+        let mes = parseInt(data_quebra[1]);
+        let ano = parseInt(data_quebra[0]);
+        //console.log('mes: ', mes);
+        //console.log('ano: ', ano);
+
+        //verificar o tipo de pŕojeto
+        if (projeto_matriz == 'SIM') {
+            id_projeto_matriz = id_projeto;
+            id_projeto = null;
+            id_projeto_pai = null;
+            //console.log('projeto.projeto_matriz')
+        } else if (projeto_pai == 'SIM') {
+            id_projeto_pai = id_projeto;
+            id_projeto = null;
+            id_projeto_matriz = null;
+            //console.log('projeto.projeto_pai')
+        } else {
+            id_projeto = id_projeto;
+            id_projeto_matriz = null;
+            id_projeto_pai = null;
+            //console.log('else projeto')
+        }
+
+        //console.log('conexao')
+        conexao.then(conexao => {
+
+            let query = `BEGIN
+            SET DATEFORMAT ymd;
+            
+            --parametros
+            DECLARE @id_projeto INTEGER = ${id_projeto}
+            DECLARE @id_projeto_pai INTEGER = ${id_projeto_pai}
+            DECLARE @id_projeto_matriz INTEGER = ${id_projeto_matriz}
+            
+            --DECLARE @data_inicio VARCHAR = NULL
+            --DECLARE @data_fim VARCHAR = NULL
+            DECLARE @data_inicio DATETIME = '${data_inicio}'
+            DECLARE @data_fim DATETIME = '${data_fim}'
+            DECLARE @mes INTEGER = ${mes}
+            DECLARE @ano INTEGER = ${ano}
+            
+            --Para não ser NULL e fazer o filtro OR errado
+            IF @id_projeto IS NULL SET @id_projeto = 0;
+            IF @id_projeto_pai IS NULL SET @id_projeto_pai = 0;
+            IF @id_projeto_matriz IS NULL SET @id_projeto_matriz = 0;
+            IF @mes IS NULL SET @mes = 0;
+            IF @ano IS NULL SET @ano = 0;
+            
+            --Indicadores meta
+            DECLARE @faturamento_bruto_meta DECIMAL(18,2) = 0.0;
+			DECLARE @lucro_bruto_meta DECIMAL(18,2) = 0.0;
+			DECLARE @custos_de_vendas_meta DECIMAL(18,2) = 0.0;
+			DECLARE @margem_contribuicao_meta DECIMAL(18,2) = 0.0;
+			DECLARE @despesas_adm_meta DECIMAL(18,2) = 0.0;
+			DECLARE @resultado_operacional_meta DECIMAL(18,2) = 0.0;
+			DECLARE @investimentos_meta DECIMAL(18,2) = 0.0;
+			DECLARE @resultado_liquido_meta DECIMAL(18,2) = 0.0;
+			DECLARE @extravio_meta DECIMAL(18,2) = 0.0;            
+            DECLARE @premiacoes_meta DECIMAL(18,2) = 0.0;
+            DECLARE @comissão_cambistas_meta DECIMAL(18,2) = 0.0;
+            DECLARE @comissao_gerentes_meta DECIMAL(18,2) = 0.0;                                                                                    
+
+			SELECT @faturamento_bruto_meta = CONVERT(DECIMAL(18, 2), SUM(m.valor_qtde))
+                FROM metas AS m
+                LEFT JOIN projetos AS p ON p.id_projeto = m.id_projeto
+                LEFT JOIN anos AS a ON a.id_ano = m.id_ano
+                LEFT JOIN meses AS me ON me.id_mes = m.id_mes
+                WHERE me.mes_numero = @mes AND a.ano_numero = @ano AND m.id_indicador = 1
+                AND (m.id_projeto = @id_projeto OR p.id_projeto_pai = @id_projeto_pai OR p.id_projeto_matriz = @id_projeto_matriz)
+			
+			SELECT @lucro_bruto_meta = CONVERT(DECIMAL(18, 2), SUM(m.valor_qtde))
+                FROM metas AS m
+                LEFT JOIN projetos AS p ON p.id_projeto = m.id_projeto
+                LEFT JOIN anos AS a ON a.id_ano = m.id_ano
+                LEFT JOIN meses AS me ON me.id_mes = m.id_mes
+                WHERE me.mes_numero = @mes AND a.ano_numero = @ano AND m.id_indicador = 2
+                AND (m.id_projeto = @id_projeto OR p.id_projeto_pai = @id_projeto_pai OR p.id_projeto_matriz = @id_projeto_matriz)
+
+			SELECT @custos_de_vendas_meta = CONVERT(DECIMAL(18, 2), SUM(m.valor_qtde))
+                FROM metas AS m
+                LEFT JOIN projetos AS p ON p.id_projeto = m.id_projeto
+                LEFT JOIN anos AS a ON a.id_ano = m.id_ano
+                LEFT JOIN meses AS me ON me.id_mes = m.id_mes
+                WHERE me.mes_numero = @mes AND a.ano_numero = @ano AND m.id_indicador = 3
+                AND (m.id_projeto = @id_projeto OR p.id_projeto_pai = @id_projeto_pai OR p.id_projeto_matriz = @id_projeto_matriz)
+
+			SELECT @margem_contribuicao_meta = CONVERT(DECIMAL(18, 2), SUM(m.valor_qtde))
+                FROM metas AS m
+                LEFT JOIN projetos AS p ON p.id_projeto = m.id_projeto
+                LEFT JOIN anos AS a ON a.id_ano = m.id_ano
+                LEFT JOIN meses AS me ON me.id_mes = m.id_mes
+                WHERE me.mes_numero = @mes AND a.ano_numero = @ano AND m.id_indicador = 4
+                AND (m.id_projeto = @id_projeto OR p.id_projeto_pai = @id_projeto_pai OR p.id_projeto_matriz = @id_projeto_matriz)
+
+			SELECT @despesas_adm_meta = CONVERT(DECIMAL(18, 2), SUM(m.valor_qtde))
+                FROM metas AS m
+                LEFT JOIN projetos AS p ON p.id_projeto = m.id_projeto
+                LEFT JOIN anos AS a ON a.id_ano = m.id_ano
+                LEFT JOIN meses AS me ON me.id_mes = m.id_mes
+                WHERE me.mes_numero = @mes AND a.ano_numero = @ano AND m.id_indicador = 5
+                AND (m.id_projeto = @id_projeto OR p.id_projeto_pai = @id_projeto_pai OR p.id_projeto_matriz = @id_projeto_matriz)
+
+			SELECT @resultado_operacional_meta = CONVERT(DECIMAL(18, 2), SUM(m.valor_qtde))
+                FROM metas AS m
+                LEFT JOIN projetos AS p ON p.id_projeto = m.id_projeto
+                LEFT JOIN anos AS a ON a.id_ano = m.id_ano
+                LEFT JOIN meses AS me ON me.id_mes = m.id_mes
+                WHERE me.mes_numero = @mes AND a.ano_numero = @ano AND m.id_indicador = 6
+                AND (m.id_projeto = @id_projeto OR p.id_projeto_pai = @id_projeto_pai OR p.id_projeto_matriz = @id_projeto_matriz)
+
+			SELECT @investimentos_meta = CONVERT(DECIMAL(18, 2), SUM(m.valor_qtde))
+                FROM metas AS m
+                LEFT JOIN projetos AS p ON p.id_projeto = m.id_projeto
+                LEFT JOIN anos AS a ON a.id_ano = m.id_ano
+                LEFT JOIN meses AS me ON me.id_mes = m.id_mes
+                WHERE me.mes_numero = @mes AND a.ano_numero = @ano AND m.id_indicador = 7
+                AND (m.id_projeto = @id_projeto OR p.id_projeto_pai = @id_projeto_pai OR p.id_projeto_matriz = @id_projeto_matriz)
+
+			SELECT @resultado_liquido_meta = CONVERT(DECIMAL(18, 2), SUM(m.valor_qtde))
+                FROM metas AS m
+                LEFT JOIN projetos AS p ON p.id_projeto = m.id_projeto
+                LEFT JOIN anos AS a ON a.id_ano = m.id_ano
+                LEFT JOIN meses AS me ON me.id_mes = m.id_mes
+                WHERE me.mes_numero = @mes AND a.ano_numero = @ano AND m.id_indicador = 8
+                AND (m.id_projeto = @id_projeto OR p.id_projeto_pai = @id_projeto_pai OR p.id_projeto_matriz = @id_projeto_matriz)
+
+			SELECT @extravio_meta = CONVERT(DECIMAL(18, 2), SUM(m.valor_qtde))
+                FROM metas AS m
+                LEFT JOIN projetos AS p ON p.id_projeto = m.id_projeto
+                LEFT JOIN anos AS a ON a.id_ano = m.id_ano
+                LEFT JOIN meses AS me ON me.id_mes = m.id_mes
+                WHERE me.mes_numero = @mes AND a.ano_numero = @ano AND m.id_indicador = 9
+                AND (m.id_projeto = @id_projeto OR p.id_projeto_pai = @id_projeto_pai OR p.id_projeto_matriz = @id_projeto_matriz)
+
+			SELECT @premiacoes_meta = CONVERT(DECIMAL(18, 2), SUM(m.valor_qtde))
+                FROM metas AS m
+                LEFT JOIN projetos AS p ON p.id_projeto = m.id_projeto
+                LEFT JOIN anos AS a ON a.id_ano = m.id_ano
+                LEFT JOIN meses AS me ON me.id_mes = m.id_mes
+                WHERE me.mes_numero = @mes AND a.ano_numero = @ano AND m.id_indicador = 11
+                AND (m.id_projeto = @id_projeto OR p.id_projeto_pai = @id_projeto_pai OR p.id_projeto_matriz = @id_projeto_matriz)
+
+			SELECT @comissão_cambistas_meta  = CONVERT(DECIMAL(18, 2), SUM(m.valor_qtde))
+                FROM metas AS m
+                LEFT JOIN projetos AS p ON p.id_projeto = m.id_projeto
+                LEFT JOIN anos AS a ON a.id_ano = m.id_ano
+                LEFT JOIN meses AS me ON me.id_mes = m.id_mes
+                WHERE me.mes_numero = @mes AND a.ano_numero = @ano AND m.id_indicador = 12
+                AND (m.id_projeto = @id_projeto OR p.id_projeto_pai = @id_projeto_pai OR p.id_projeto_matriz = @id_projeto_matriz)
+
+			SELECT @comissao_gerentes_meta  = CONVERT(DECIMAL(18, 2), SUM(m.valor_qtde))
+                FROM metas AS m
+                LEFT JOIN projetos AS p ON p.id_projeto = m.id_projeto
+                LEFT JOIN anos AS a ON a.id_ano = m.id_ano
+                LEFT JOIN meses AS me ON me.id_mes = m.id_mes
+                WHERE me.mes_numero = @mes AND a.ano_numero = @ano AND m.id_indicador = 13
+                AND (m.id_projeto = @id_projeto OR p.id_projeto_pai = @id_projeto_pai OR p.id_projeto_matriz = @id_projeto_matriz)
+
+			
+			--Indicadores realizado-----------------
+            DECLARE @faturamento_bruto DECIMAL(18,2) = 0.0;
+            DECLARE @premiacoes DECIMAL(18,2) = 0.0;
+            DECLARE @comissão_cambistas DECIMAL(18,2) = 0.0;
+            DECLARE @comissao_gerentes DECIMAL(18,2) = 0.0;
+            DECLARE @custos_de_vendas DECIMAL(18,2) = 0.0;
+            DECLARE @lucro_bruto DECIMAL(18,2) = 0.0;
+            DECLARE @margem_contribuicao DECIMAL(18,2) = 0.0;
+            DECLARE @despesas_adm DECIMAL(18,2) = 0.0;
+            DECLARE @resultado_operacional DECIMAL(18,2) = 0.0;
+            DECLARE @investimentos DECIMAL(18,2) = 0.0;
+            DECLARE @extravio DECIMAL(18,2) = 0.0;
+            DECLARE @resultado_liquido DECIMAL(18,2) = 0.0;
+            DECLARE @lucro_percentual DECIMAL(18,2) = 0.0;
+
+            SELECT @custos_de_vendas = CONVERT(DECIMAL(18, 2), SUM(fc.valor_mov))
+                FROM fluxo_caixa AS fc
+                LEFT JOIN projetos AS p ON p.id_projeto = fc.id_projeto
+                WHERE fc.id_grupo_financeiro = 3 AND fc.data_mov_completo BETWEEN @data_inicio AND @data_fim
+                AND (fc.id_projeto = @id_projeto OR p.id_projeto_pai = @id_projeto_pai OR p.id_projeto_matriz = @id_projeto_matriz)
+
+            SELECT @faturamento_bruto = CONVERT(DECIMAL(18, 2), SUM(fc.valor_mov))
+                FROM fluxo_caixa AS fc
+                LEFT JOIN projetos AS p ON p.id_projeto = fc.id_projeto
+                WHERE fc.id_grupo_financeiro = 1 AND fc.data_mov_completo BETWEEN @data_inicio AND @data_fim
+                AND (fc.id_projeto = @id_projeto OR p.id_projeto_pai = @id_projeto_pai OR p.id_projeto_matriz = @id_projeto_matriz)
+
+            SELECT @premiacoes = CONVERT(DECIMAL(18, 2), SUM(fc.valor_mov))
+                FROM fluxo_caixa AS fc
+                LEFT JOIN projetos AS p ON p.id_projeto = fc.id_projeto
+                WHERE fc.id_grupo_financeiro = 4 AND fc.data_mov_completo BETWEEN @data_inicio AND @data_fim
+                AND (fc.id_projeto = @id_projeto OR p.id_projeto_pai = @id_projeto_pai OR p.id_projeto_matriz = @id_projeto_matriz)
+
+            SELECT @comissão_cambistas = CONVERT(DECIMAL(18, 2), SUM(fc.valor_mov))
+                FROM fluxo_caixa AS fc
+                LEFT JOIN projetos AS p ON p.id_projeto = fc.id_projeto
+                WHERE fc.id_grupo_financeiro = 5 AND fc.data_mov_completo BETWEEN @data_inicio AND @data_fim
+                AND (fc.id_projeto = @id_projeto OR p.id_projeto_pai = @id_projeto_pai OR p.id_projeto_matriz = @id_projeto_matriz)
+
+            SELECT @comissao_gerentes = CONVERT(DECIMAL(18, 2), SUM(fc.valor_mov))
+                FROM fluxo_caixa AS fc
+                LEFT JOIN projetos AS p ON p.id_projeto = fc.id_projeto
+                WHERE fc.id_grupo_financeiro = 6 AND fc.data_mov_completo BETWEEN @data_inicio AND @data_fim
+                AND (fc.id_projeto = @id_projeto OR p.id_projeto_pai = @id_projeto_pai OR p.id_projeto_matriz = @id_projeto_matriz)
+
+            SELECT @despesas_adm = CONVERT(DECIMAL(18, 2), SUM(fc.valor_mov))
+                FROM fluxo_caixa AS fc
+                LEFT JOIN projetos AS p ON p.id_projeto = fc.id_projeto
+                LEFT JOIN grupos_financeiro AS gf ON gf.id_grupo_financeiro = fc.id_grupo_financeiro
+                WHERE (fc.id_grupo_financeiro = 7 OR gf.id_grupo_financeiro_pai = 7) AND
+                fc.data_mov_completo BETWEEN @data_inicio AND @data_fim
+                AND (fc.id_projeto = @id_projeto OR p.id_projeto_pai = @id_projeto_pai OR p.id_projeto_matriz = @id_projeto_matriz)
+
+            SELECT @investimentos = CONVERT(DECIMAL(18, 2), SUM(fc.valor_mov))
+                FROM fluxo_caixa AS fc
+                LEFT JOIN projetos AS p ON p.id_projeto = fc.id_projeto
+                LEFT JOIN grupos_financeiro AS gf ON gf.id_grupo_financeiro = fc.id_grupo_financeiro
+                WHERE (fc.id_grupo_financeiro = 8 OR gf.id_grupo_financeiro_pai = 8) AND
+                fc.data_mov_completo BETWEEN @data_inicio AND @data_fim
+                AND (fc.id_projeto = @id_projeto OR p.id_projeto_pai = @id_projeto_pai OR p.id_projeto_matriz = @id_projeto_matriz)
+
+            SELECT @extravio = CONVERT(DECIMAL(18, 2), SUM(fc.valor_mov))
+                FROM fluxo_caixa AS fc
+                LEFT JOIN projetos AS p ON p.id_projeto = fc.id_projeto
+                LEFT JOIN grupos_financeiro AS gf ON gf.id_grupo_financeiro = fc.id_grupo_financeiro
+                WHERE (fc.id_grupo_financeiro = 9 OR gf.id_grupo_financeiro_pai = 9) AND
+                fc.data_mov_completo BETWEEN @data_inicio AND @data_fim
+                AND (fc.id_projeto = @id_projeto OR p.id_projeto_pai = @id_projeto_pai OR p.id_projeto_matriz = @id_projeto_matriz)
+
+
+            IF @faturamento_bruto IS NULL SET @faturamento_bruto = 0;
+            IF @premiacoes IS NULL SET @premiacoes = 0;
+            IF @comissão_cambistas IS NULL SET @comissão_cambistas = 0;
+            IF @comissao_gerentes IS NULL SET @comissao_gerentes = 0;
+            IF @custos_de_vendas IS NULL SET @custos_de_vendas = 0;
+            IF @despesas_adm IS NULL SET @despesas_adm = 0;
+            IF @investimentos IS NULL SET @investimentos = 0;
+            IF @extravio IS NULL SET @extravio = 0;
+            IF @resultado_operacional IS NULL SET @resultado_operacional = 0;
+            IF @resultado_liquido IS NULL SET @resultado_liquido = 0;
+            IF @lucro_percentual IS NULL SET @lucro_percentual = 0;			
+
+            SET @lucro_bruto = (@faturamento_bruto - (@premiacoes + @comissão_cambistas));
+
+            SET @margem_contribuicao = (@lucro_bruto  - (@custos_de_vendas + @comissao_gerentes));
+
+            SET @resultado_operacional = (@margem_contribuicao  - @despesas_adm);
+
+            SET @resultado_liquido = @resultado_operacional - (@investimentos + @extravio);
+
+			--percentual em cima do faturamento bruto
+			DECLARE @faturamento_bruto_percent_fat DECIMAL(18,2) = 0.0;
+            DECLARE @premiacoes_percent_fat DECIMAL(18,2) = 0.0;
+            DECLARE @comissão_cambistas_percent_fat DECIMAL(18,2) = 0.0;
+            DECLARE @comissao_gerentes_percent_fat DECIMAL(18,2) = 0.0;
+            DECLARE @custos_de_vendas_percent_fat DECIMAL(18,2) = 0.0;
+            DECLARE @lucro_bruto_percent_fat DECIMAL(18,2) = 0.0;
+            DECLARE @margem_contribuicao_percent_fat DECIMAL(18,2) = 0.0;
+            DECLARE @despesas_adm_percent_fat DECIMAL(18,2) = 0.0;
+            DECLARE @resultado_operacional_percent_fat DECIMAL(18,2) = 0.0;
+            DECLARE @investimentos_percent_fat DECIMAL(18,2) = 0.0;
+            DECLARE @extravio_percent_fat DECIMAL(18,2) = 0.0;
+            DECLARE @resultado_liquido_percent_fat DECIMAL(18,2) = 0.0;
+
+			IF @faturamento_bruto != 0 
+                SET @faturamento_bruto_percent_fat = CAST(((@faturamento_bruto / @faturamento_bruto) * 100) AS DECIMAL(18, 2))
+
+            IF @premiacoes != 0 AND @faturamento_bruto != 0
+                SET @premiacoes_percent_fat = CAST(((@premiacoes / @faturamento_bruto) * 100) AS DECIMAL(18, 2))
+
+			IF @comissão_cambistas != 0 AND @faturamento_bruto != 0
+                SET @comissão_cambistas_percent_fat = CAST(((@comissão_cambistas / @faturamento_bruto) * 100) AS DECIMAL(18, 2))
+
+			IF @comissao_gerentes != 0 AND @faturamento_bruto != 0
+                SET @comissao_gerentes_percent_fat = CAST(((@comissao_gerentes / @faturamento_bruto) * 100) AS DECIMAL(18, 2))
+
+			IF @custos_de_vendas != 0 AND @faturamento_bruto != 0
+                SET @custos_de_vendas_percent_fat = CAST(((@custos_de_vendas / @faturamento_bruto) * 100) AS DECIMAL(18, 2))
+
+			IF @despesas_adm != 0 AND @faturamento_bruto != 0
+                SET @despesas_adm_percent_fat = CAST(((@despesas_adm / @faturamento_bruto) * 100) AS DECIMAL(18, 2))
+
+			IF @investimentos != 0 AND @faturamento_bruto != 0
+                SET @investimentos_percent_fat = CAST(((@investimentos / @faturamento_bruto) * 100) AS DECIMAL(18, 2))
+
+			IF @extravio != 0 AND @faturamento_bruto != 0
+                SET @extravio_percent_fat  = CAST(((@extravio / @faturamento_bruto) * 100) AS DECIMAL(18, 2))
+
+			IF @resultado_operacional != 0 AND @faturamento_bruto != 0
+                SET @resultado_operacional_percent_fat  = CAST(((@resultado_operacional / @faturamento_bruto) * 100) AS DECIMAL(18, 2))
+
+			IF @resultado_liquido != 0 AND @faturamento_bruto != 0
+                SET @resultado_liquido_percent_fat  = CAST(((@resultado_liquido / @faturamento_bruto) * 100) AS DECIMAL(18, 2))
+
+			IF @lucro_bruto != 0 AND @faturamento_bruto != 0
+                SET @lucro_bruto_percent_fat  = CAST(((@lucro_bruto / @faturamento_bruto) * 100) AS DECIMAL(18, 2))
+
+			IF @margem_contribuicao != 0 AND @faturamento_bruto != 0
+                SET @margem_contribuicao_percent_fat  = CAST(((@margem_contribuicao / @faturamento_bruto) * 100) AS DECIMAL(18, 2))
+			
+			IF @resultado_liquido != 0 AND @faturamento_bruto != 0
+                SET @lucro_percentual  = CAST(((@resultado_liquido / @faturamento_bruto) * 100) AS DECIMAL(18, 2))
+
+			-----------------------------
+            SELECT
+            i.seq, i.id_indicador, i.nome,
+				
+				 CASE i.id_indicador
+                WHEN 1 --faturamento bruno
+                 THEN @faturamento_bruto_meta
+
+                WHEN 11 --premiacoes
+                 THEN @premiacoes_meta
+
+                WHEN 12 --Comissões Cambistas
+                 THEN @comissão_cambistas_meta
+
+                WHEN 2 --lucro bruto
+                 THEN @lucro_bruto_meta
+
+                WHEN 13 --Comissões Gerentes
+                 THEN @comissao_gerentes_meta
+
+                WHEN 3 --custo de vendas
+                 THEN @custos_de_vendas_meta
+
+                WHEN 4 --margem de contribuição
+                 THEN @margem_contribuicao_meta
+
+                WHEN 5 --Despesas Adm
+                 THEN @despesas_adm_meta
+
+                WHEN 6 --Resultado Operacional
+                 THEN @resultado_operacional_meta
+
+                WHEN 7 --Investimentos
+                 THEN @investimentos_meta
+
+                WHEN 9 --Extravio
+                 THEN @extravio_meta
+
+                WHEN 8 -- Resultado Liquido
+                 THEN @resultado_liquido_meta
+
+                WHEN 10 -- Resultado Liquido
+                 THEN 0
+
+            END
+            AS meta,
+
+            CASE i.id_indicador
+                WHEN 1 --faturamento bruno
+                 THEN @faturamento_bruto
+
+                WHEN 11 --premiacoes
+                 THEN @premiacoes
+
+                WHEN 12 --Comissões Cambistas
+                 THEN @comissão_cambistas
+
+                WHEN 2 --lucro bruto
+                 THEN @lucro_bruto
+
+                WHEN 13 --Comissões Gerentes
+                 THEN @comissao_gerentes
+
+                WHEN 3 --custo de vendas
+                 THEN @custos_de_vendas
+
+                WHEN 4 --margem de contribuição
+                 THEN @margem_contribuicao
+
+                WHEN 5 --Despesas Adm
+                 THEN @despesas_adm
+
+                WHEN 6 --Resultado Operacional
+                 THEN @resultado_operacional
+
+                WHEN 7 --Investimentos
+                 THEN @investimentos
+
+                WHEN 9 --Extravio
+                 THEN @extravio
+
+                WHEN 8 -- Resultado Liquido
+                 THEN @resultado_liquido
+
+                WHEN 10 -- Resultado Liquido
+                 THEN 0
+
+            END
+            AS realizado,
+
+            CASE i.id_indicador
+                WHEN 1 --faturamento bruno
+                 THEN @faturamento_bruto_percent_fat
+
+                WHEN 11 --premiacoes
+                 THEN @premiacoes_percent_fat
+
+                WHEN 12 --Comissões Cambistas
+                 THEN @comissão_cambistas_percent_fat
+
+                WHEN 2 --lucro bruto
+                 THEN @lucro_bruto_percent_fat
+
+                WHEN 13 --Comissões Gerentes
+                 THEN @comissao_gerentes_percent_fat
+
+                WHEN 3 --custo de vendas
+                 THEN @custos_de_vendas_percent_fat
+
+                WHEN 4 --margem de contribuição
+                 THEN @margem_contribuicao_percent_fat
+
+                WHEN 5 --Despesas Adm
+                 THEN @despesas_adm_percent_fat
+
+                WHEN 6 --Resultado Operacional
+                 THEN @resultado_operacional_percent_fat
+
+                WHEN 7 --Investimentos
+                 THEN @investimentos_percent_fat
+
+                WHEN 9 --Extravio
+                 THEN @extravio_percent_fat
+
+                WHEN 8 -- Resultado Liquido
+                 THEN @resultado_liquido_percent_fat
+
+                WHEN 10 -- Resultado Liquido
+                 THEN @lucro_percentual
+
+            END
+            AS percent_fat
+            FROM indicadores AS i
+            WHERE i.ativo = 'SIM' ORDER BY i.seq ASC
+            END`;
+
+            console.log('query: ', query)
+
+            conexao.request()
+                .query(query)
+                .then(result => {
+                    resposta.dados = result.recordset;
+                    return resp.json(resposta)
+                })
+                .catch(err => {
+                    resposta.erro = true;
+                    resposta.msg = "Ocorreu um erro.";
+                    console.log('erro:', err);
+                    return resp.json(resposta)
+                });
+        });
+    }
+
+
+    //-----------------------------
+    static getProjetadoXrealizadoCaixaProjetosRendimentoAnual(req, resp) {
+        console.log('>>>getProjetadoXrealizadoCaixaProjetosRendimentoAnual: ')
+        let resposta = new RespostaClass();
+        resposta.erro = false;
+        resposta.msg = null;
+        resposta.dados = [];
+        let listaDeProjetos = [];
+
+        try {
+
+            let {
+                data_inicio = null,
+                data_fim = null,
+                id_projeto = null,
+                id_projeto_pai = null,
+                id_projeto_matriz = null,
+                projeto_matriz = null,
+                projeto_pai = null,
+            } = req.query;
+
+            //Recuperar lista de projetos
+            let queryProjetos = `SELECT * FROM projetos AS p `
+
+            //verificar o tipo de projeto
+            if (projeto_matriz == 'SIM' || projeto_pai == 'SIM') {
+                //queryProjetos += ` WHERE p.id_projeto_matriz = ${id_projeto};`
+                queryProjetos += ` WHERE p.id_projeto_pai = ${id_projeto};`
+            } /** else if (projeto_pai == 'SIM') {
+                queryProjetos += ` WHERE p.id_projeto_pai = ${id_projeto};`
+            } */else {
+                queryProjetos += ` WHERE p.id_projeto = ${id_projeto};`
+                /**resposta.erro = true;
+                resposta.msg = 'Deve ser informado um projeto tipo pai ou matriz.';
+                return resp.json(resposta) */
+            }
+
+            //console.log('queryProjetos: ', queryProjetos);
+
+            const transaction = new sql.Transaction(pool);
+            transaction.begin(err => {
+                if (err) {
+                    resposta.erro = true;
+                    resposta.msg = MSG_ERRO;
+                    return resp.json(resposta)
+                }
+
+                let request = new sql.Request(transaction)
+
+                request.query(queryProjetos, (err, result) => {
+                    if (err) {
+                        resposta.erro = true;
+                        resposta.msg = "Não foi possível recuperar lista de projetos.";
+                        return resp.json(resposta)
+                    }
+
+                    //console.log('list result: ', result)
+                    if (result.rowsAffected[0] > 0) {
+                        //recuperar id
+                        if (result.recordset != undefined) {
+                            listaDeProjetos = result.recordset;
+
+                            //console.log('listaDeProjetos: ', listaDeProjetos)
+
+                            new Promise((resolve, reject) => {
+
+                                console.log('Promise 1 ')
+                                async.eachSeries(listaDeProjetos, function iterator(projeto, next) {
+                                    console.log('async.eachSeries 1', projeto)
+                                    let dadosMeses = [];
+
+                                    //console.log('projeto item: ', projeto)
+
+                                  
+
+                                        let listMeses = Utils.getListaMesesAnoNumeroMesNome();
+                                        console.log('lista meses: ', listMeses)
+
+                                        async.eachSeries(listMeses, function iterator(mesAno, next2) {   
+                                            console.log('async.eachSeries 2', mesAno)
+
+                                            let ano = data_inicio.split("-")[0];
+                                            let datasInicialeFinalMes = Utils.retornaDataInicialeFinalMesDoAno(mesAno.numero_mes, ano)
+                                            console.log('ano: ', ano)
+                                            console.log('datasInicialeFinalMes: ', datasInicialeFinalMes)
+
+                                            let parametros = {
+                                                id_projeto: projeto.id_projeto,
+                                                id_projeto_pai: projeto.id_projeto_pai,
+                                                id_projeto_matriz: projeto.id_projeto_matriz,
+                                                projeto_matriz: projeto.projeto_matriz,
+                                                projeto_pai: projeto.projeto_pai,
+                                                data_inicio: datasInicialeFinalMes.data_inicial,
+                                                data_fim: datasInicialeFinalMes.data_final
+                                            };                                            
+                                            console.log('parametros: ', parametros)
+
+                                            ProjetadoXrealizadoModel.getProjetadoXrealizadoPromise(parametros)
+                                                .then(retorno => {
+
+                                                    //let projInd = { projeto: projeto, indicadores: retorno.dados }
+                                                    let projInd = { indicadores: retorno.dados }
+                                                    resposta.dadosMeses.push(projInd);
+
+                                                    next2();
+                                                }).catch(err => {
+                                                    resposta.erro = true;
+                                                    resposta.msg = "Ocorreu um erro.";
+                                                    console.log('erro:', err);
+
+                                                    next2(resposta.msg);
+                                                });
+
+                                        }, (err) => {
+                                            //console.log('Chegou na call async.eachSeries')
+                                            if (err) {
+                                                resposta.erro = true;
+                                                resposta.msg = err;
+                                                next(resposta.msg)
+                                            } else {
+                                                next()
+                                            }
+                                        })//final async.eachSeries meses ano
+
+                                   
+
+
+                                }, (err) => {
+                                    //console.log('Chegou na call async.eachSeries')
+                                    if (err) {
+                                        resposta.erro = true;
+                                        resposta.msg = err;
+                                        resolve()
+                                    } else {
+                                        resolve()
+                                    }
+                                })//final async.eachSeries
+                                //console.log('final async.eachSeries')
+
+                            }).then(() => {
+
+                                if (resposta.erro === false) {
+                                    //console.log('transaction.commit');
+
+                                    transaction.commit(err => {
+                                        if (err) {
+                                            resposta.erro = true;
+                                        }
+
+                                        //console.log("committed sem erro.")
+                                        return resp.json(resposta)
+                                    })
+                                } else {
+                                    //console.log("rollback final")
+                                    transaction.rollback(err => {
+                                        if (err) {
+                                            resposta.erro = true;
+                                        }
+
+                                        //console.log("rollback sem erro.")
+                                        return resp.json(resposta)
+                                    })
+                                }
+
+                            }).catch(err => {
+                                //console.log("Erro bloc catch promise: ", err);
+                                resposta.erro = true;
+                                //resposta.msg = MSG_ERRO;
+                                return resp.json(resposta)
+                            })
+
+                        } else {
+                            resposta.erro = true;
+                            resposta.msg = "Não foi possível recuperar lista de projetos.";
+                            //return next(resposta.msg);
+                            return resp.json(resposta)
+                        }
+                    } else {
+                        resposta.erro = true;
+                        resposta.msg = "Não foi possível recuperar lista de projetos.";
+                        //return next(resposta.msg);
+                        return resp.json(resposta)
+                    }
+                })
+
+            })//final transaction.begin
+
+        } catch (error) {
+            //console.log("Erro bloc try catch: ", error);
+            resposta.erro = true;
+            //resposta.msg = MSG_ERRO;
+            return resp.json(resposta)
+        }
+        //console.log('TERMINO');
+    }
+}

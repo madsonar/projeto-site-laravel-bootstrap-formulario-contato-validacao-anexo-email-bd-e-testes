@@ -1,10 +1,10 @@
-# Projeto Site com Laravel 6, bootstrap e React
+# Projeto Site com Laravel 6, Bootstrap e React
 
 ## Funcionalidades 
 
 * Formulário de contato com envio de anexo, validação de dados, envio de email, cadastro em banco de dados SQLite e caso testes para verificar disponibilidade do recurso.
 
-* Sistema de login, cadastro de usuários e recurperação de senha por e-mail.
+* Sistema de login, cadastro de usuários e recuperação de senha por e-mail.
 
 * Envio de e-mail com Drive do Gmail da Google.
 
@@ -39,7 +39,7 @@
     $ cp .env.example .env
 
 * Gerar chave de segurança da aplicação:
-
+clea
     $ php artisan key:generate
 
 * Criar arquivo banco SQLite:
@@ -56,7 +56,6 @@
     DB_DATABASE=laravel  
     DB_USERNAME=root  
     DB_PASSWORD=  
-
 
     Inserir linha:  
 
@@ -92,13 +91,24 @@
 
     Obs: No Gmail deve ser ativado a configuração 'Acesso a app menos seguro'
 
-* Rodando um caso de teste para verificar a disponibilidade da funcionalidade:
+* Rodando um caso de testes para verificar a disponibilidade da funcionalidade:
 
     $ ./vendor/bin/phpunit
 
-* Rodando a aplicação para verificar se todas a configurações estão ok.
+* Rodando a aplicação para verificar se todas as configurações estão ok.
 
     $ php artisan serve
+
+
+* Verificar os registros no banco de dados SQLite com ferrameta Tinker do Laravel
+
+    Chama no console  
+
+    $ php artisan tinker
+
+    Recupera todos os dados a partir de um modelo  
+
+    $ Contatos::all()
 
 
 
